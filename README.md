@@ -7,9 +7,11 @@
 
 ## Можливості
 
+- Вибір COM-порту через UI при старті (без редагування коду)
 - Live-дашборд: напруга, струм, витрата mAh
 - Статус FC: cycle time, I2C помилки, активні сенсори
-- GPS: тип фіксу, кількість супутників, висота
+- GPS: тип фіксу, супутники, висота, heading, швидкість
+- GPS-трек на карті в реальному часі (Leaflet.js + OpenStreetMap)
 - Графік напруги в реальному часі (останні 60 точок, Chart.js)
 - Колірна індикація рівня батареї (зелений / жовтий / червоний)
 
@@ -33,23 +35,13 @@ npm install
 
 ---
 
-## Налаштування
-
-Відкрий `main.js` і вкажи свій COM-порт:
-
-```js
-port = new SerialPort({ path: "COM3", baudRate: 115200 });
-```
-
-На Linux/macOS порт виглядає як `/dev/ttyUSB0` або `/dev/tty.usbserial-*`.
-
----
-
 ## Запуск
 
 ```bash
 npm start
 ```
+
+При старті відкривається вікно вибору порту. Додаток автоматично знаходить доступні серійні порти — обери потрібний зі списку і натисни "Підключити". Якщо FC не підключений — підключи і натисни "Оновити".
 
 ---
 
@@ -57,12 +49,13 @@ npm start
 
 ```
 electron-gcs/
-├── main.js          # Electron main process: вікно, SerialPort, MSP polling
-├── preload.js       # контекстний міст між main і renderer (contextIsolation)
-├── index.html       # UI: дашборд, графік, логіка рендера
+├── main.js            # Electron main process: два вікна, SerialPort, MSP polling, IPC
+├── preload.js         # контекстний міст між main і renderer (contextIsolation)
+├── select-port.html   # UI вибору COM-порту при старті
+├── index.html         # GCS UI: дашборд, карта, графік, логіка рендера
 ├── src/
-│   ├── msp.js       # MSP V2 парсер: buildRequest(), parseResponse(), COMMANDS
-│   └── parsers.js   # парсери payload: parseStatus(), parseAnalog(), parseRawGPS()
+│   ├── msp.js         # MSP V2 парсер: buildRequest(), parseResponse(), COMMANDS
+│   └── parsers.js     # парсери payload: parseStatus(), parseAnalog(), parseRawGPS()
 └── package.json
 ```
 
@@ -75,20 +68,20 @@ FC (iNAV)
               └── MSP V2 parser
                     └── IPC: webContents.send("telemetry")
                           └── preload.js → fcAPI.onTelemetry()
-                                └── index.html (renderer) → Chart.js / DOM
+                                └── index.html (renderer) → Leaflet / Chart.js / DOM
 ```
 
-Main process опитує FC кожну **1 секунду** (STATUS, ANALOG, RAW\_GPS), парсить відповіді і передає дані в renderer через Electron IPC. Renderer оновлює UI і графік без перезавантаження.
+Main process опитує FC кожну **1 секунду** (STATUS, ANALOG, RAW\_GPS), парсить відповіді і передає дані в renderer через Electron IPC. Renderer оновлює UI, карту і графік без перезавантаження.
 
 ---
 
 ## Індикація батареї
 
-| Напруга     | Колір   | Стан              |
-|-------------|---------|-------------------|
-| ≥ 11.1V     | білий   | нормальний         |
-| 10.5–11.1V  | жовтий  | низький заряд      |
-| < 10.5V     | червоний| критичний рівень   |
+| Напруга     | Колір    | Стан             |
+|-------------|----------|------------------|
+| ≥ 11.1V     | білий    | нормальний        |
+| 10.5–11.1V  | жовтий   | низький заряд     |
+| < 10.5V     | червоний | критичний рівень  |
 
 Пороги розраховані для 3S LiPo (3 × 3.5V / 3.7V / 4.2V).
 
@@ -102,8 +95,21 @@ Main process опитує FC кожну **1 секунду** (STATUS, ANALOG, RA
 | `chart.js`   | ^4.5.1  | графік напруги в реальному часі |
 | `electron`   | ^42.1.0 | десктопний shell (devDep)       |
 
+Leaflet.js підвантажується з CDN — інтернет потрібен для відображення тайлів карти.
+
+---
+
+## Roadmap
+
+- [x] Leaflet.js GPS-трек на карті
+- [x] Вибір COM-порту з UI
+- [ ] Логування телеметрії у SQLite
+- [ ] MAVLink підтримка (ArduPilot / PX4)
+- [ ] Офлайн-тайли карти
+- [ ] Підтримка кількох профілів батареї (3S / 4S / 6S)
+
 ---
 
 ## Зв'язок з msp-client
 
-[msp-client](https://github.com/oleksiihrushko/msp-client) — консольна версія цього ж парсера без Electron. Зручна для швидкої діагностики FC в терміналі. Модулі `msp.js` і `parsers.js` спільні між обома проєктами.
+[msp-client](../msp-client) — консольна версія цього ж парсера без Electron. Зручна для швидкої діагностики FC в терміналі. Модулі `msp.js` і `parsers.js` спільні між обома проєктами.
