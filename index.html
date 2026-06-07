@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MSP GCS</title>
+    <script src="node_modules/chart.js/dist/chart.umd.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: monospace;
+        background: #0d0f14;
+        color: #e8eaf0;
+        padding: 24px;
+      }
+      h1 {
+        color: #00d4aa;
+        margin-bottom: 20px;
+        font-size: 18px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .card {
+        background: #13161d;
+        border: 1px solid #252a38;
+        border-radius: 6px;
+        padding: 16px;
+      }
+      .card h3 {
+        color: #00d4aa;
+        font-size: 10px;
+        letter-spacing: 2px;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+      }
+      .value {
+        font-size: 26px;
+        font-weight: bold;
+        color: #fff;
+      }
+      .value.warn {
+        color: #f5a623;
+      }
+      .value.danger {
+        color: #e53e3e;
+      }
+      .label {
+        font-size: 11px;
+        color: #7a8099;
+        margin-top: 2px;
+      }
+      .row {
+        margin-top: 10px;
+      }
+      .sensors {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 10px;
+      }
+      .sensor {
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 10px;
+        background: #0d2a22;
+        border: 1px solid #00d4aa33;
+        color: #00d4aa;
+      }
+      .sensor.off {
+        background: #1a1e28;
+        border-color: #ffffff15;
+        color: #7a8099;
+      }
+      .chart-card {
+        background: #13161d;
+        border: 1px solid #252a38;
+        border-radius: 6px;
+        padding: 16px;
+      }
+      .chart-card h3 {
+        color: #00d4aa;
+        font-size: 10px;
+        letter-spacing: 2px;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+      }
+      canvas {
+        width: 100% !important;
+      }
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        font-size: 11px;
+        color: #7a8099;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #00d4aa;
+        animation: pulse 1s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>⬡ MSP Ground Control Station</h1>
+
+    <div class="status-bar">
+      <div class="status-dot"></div>
+      <span id="status-text">Підключено · COM3 · 115200</span>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>🔋 Батарея</h3>
+        <div class="value" id="voltage">-.-V</div>
+        <div class="label">Напруга</div>
+        <div class="row">
+          <div class="value" id="current" style="font-size: 20px">-.-- A</div>
+          <div class="label">Струм</div>
+        </div>
+        <div class="row">
+          <div class="value" id="mah" style="font-size: 20px">- mAh</div>
+          <div class="label">Витрата</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📡 Статус FC</h3>
+        <div class="value" id="cycle" style="font-size: 20px">- мкс</div>
+        <div class="label">Cycle time</div>
+        <div class="row">
+          <div class="value" id="i2c" style="font-size: 20px">-</div>
+          <div class="label">I2C errors</div>
+        </div>
+        <div class="sensors" id="sensors"></div>
+      </div>
+
+      <div class="card">
+        <h3>🛰️ GPS</h3>
+        <div class="value" id="fix">-</div>
+        <div class="label">Fix type</div>
+        <div class="row">
+          <div class="value" id="sats" style="font-size: 20px">- sat</div>
+          <div class="label">Супутники</div>
+        </div>
+        <div class="row">
+          <div class="value" id="alt" style="font-size: 20px">- m</div>
+          <div class="label">Висота (баро)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h3>📈 Напруга батареї в реальному часі</h3>
+      <canvas id="voltageChart" height="80"></canvas>
+    </div>
+
+    <script>
+      // Ініціалізація графіку
+      const ctx = document.getElementById("voltageChart").getContext("2d");
+      const MAX_POINTS = 60;
+
+      const chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Напруга (V)",
+              data: [],
+              borderColor: "#00d4aa",
+              backgroundColor: "rgba(0, 212, 170, 0.08)",
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.3,
+              fill: true,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          animation: false,
+          scales: {
+            x: {
+              display: false,
+            },
+            y: {
+              min: 9,
+              max: 13,
+              ticks: { color: "#7a8099", stepSize: 0.5 },
+              grid: { color: "#252a38" },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+          },
+        },
+      });
+
+      function addVoltagePoint(voltage) {
+        const now = new Date().toLocaleTimeString();
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(voltage);
+        if (chart.data.labels.length > MAX_POINTS) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+        }
+        chart.update();
+      }
+
+      // Обробка телеметрії
+      window.fcAPI.onTelemetry(({ type, data }) => {
+        if (type === "analog") {
+          // Напруга з кольором за рівнем
+          const vEl = document.getElementById("voltage");
+          vEl.textContent = data.voltage.toFixed(1) + "V";
+          vEl.className =
+            "value" +
+            (data.voltage < 10.5
+              ? " danger"
+              : data.voltage < 11.1
+                ? " warn"
+                : "");
+
+          document.getElementById("current").textContent =
+            data.current.toFixed(2) + " A";
+          document.getElementById("mah").textContent = data.mAhDrawn + " mAh";
+
+          addVoltagePoint(data.voltage);
+        }
+
+        if (type === "status") {
+          document.getElementById("cycle").textContent =
+            data.cycleTime + " мкс";
+
+          const i2cEl = document.getElementById("i2c");
+          i2cEl.textContent = data.i2cErrors;
+          i2cEl.className = "value" + (data.i2cErrors > 0 ? " warn" : "");
+
+          const names = ["gyro", "accel", "baro", "compass", "gps"];
+          document.getElementById("sensors").innerHTML = names
+            .map(
+              (n) =>
+                `<span class="sensor ${data.sensors[n] ? "" : "off"}">${n}</span>`,
+            )
+            .join("");
+        }
+
+        if (type === "gps") {
+          const fixEl = document.getElementById("fix");
+          fixEl.textContent = data.fixType;
+          fixEl.className =
+            "value" +
+            (data.fixType === "3D fix"
+              ? ""
+              : data.fixType === "2D fix"
+                ? " warn"
+                : " danger");
+
+          document.getElementById("sats").textContent = data.numSat + " sat";
+          document.getElementById("alt").textContent = data.altitude + " m";
+        }
+      });
+    </script>
+  </body>
+</html>

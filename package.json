@@ -1,0 +1,19 @@
+{
+  "name": "electron-gcs",
+  "version": "1.0.0",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "electron": "^42.1.0"
+  }
+}
