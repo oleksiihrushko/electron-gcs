@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <title>MSP GCS</title>
     <script src="node_modules/chart.js/dist/chart.umd.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
       * {
         margin: 0;
@@ -45,20 +47,14 @@
         font-weight: bold;
         color: #fff;
       }
-      .value.warn {
-        color: #f5a623;
-      }
-      .value.danger {
-        color: #e53e3e;
-      }
+      .value.warn   { color: #f5a623; }
+      .value.danger { color: #e53e3e; }
       .label {
         font-size: 11px;
         color: #7a8099;
         margin-top: 2px;
       }
-      .row {
-        margin-top: 10px;
-      }
+      .row { margin-top: 10px; }
       .sensors {
         display: flex;
         flex-wrap: wrap;
@@ -83,8 +79,10 @@
         border: 1px solid #252a38;
         border-radius: 6px;
         padding: 16px;
+        margin-bottom: 16px;
       }
-      .chart-card h3 {
+      .chart-card h3,
+      .map-card h3 {
         color: #00d4aa;
         font-size: 10px;
         letter-spacing: 2px;
@@ -110,13 +108,63 @@
         animation: pulse 1s infinite;
       }
       @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.3;
-        }
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.3; }
+      }
+
+      /* ── MAP ── */
+      .map-card {
+        background: #13161d;
+        border: 1px solid #252a38;
+        border-radius: 6px;
+        padding: 16px;
+      }
+      .map-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .map-coords {
+        font-size: 10px;
+        color: #7a8099;
+        font-family: monospace;
+      }
+      #map {
+        height: 320px;
+        border-radius: 4px;
+        background: #1a1e28;
+      }
+      /* Leaflet темна тема — прибираємо білий фон тайлів до завантаження */
+      .leaflet-container {
+        background: #1a1e28;
+      }
+      .map-controls {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .map-btn {
+        background: #1a1e28;
+        border: 1px solid #252a38;
+        color: #7a8099;
+        font-family: monospace;
+        font-size: 10px;
+        padding: 4px 10px;
+        cursor: pointer;
+        border-radius: 3px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .map-btn:hover {
+        border-color: #00d4aa;
+        color: #00d4aa;
+      }
+      .map-stat {
+        margin-left: auto;
+        font-size: 10px;
+        color: #7a8099;
+        align-self: center;
       }
     </style>
   </head>
@@ -125,7 +173,7 @@
 
     <div class="status-bar">
       <div class="status-dot"></div>
-      <span id="status-text">Підключено · COM3 · 115200</span>
+      <span id="status-text">Підключення...</span>
     </div>
 
     <div class="grid">
@@ -164,7 +212,15 @@
         </div>
         <div class="row">
           <div class="value" id="alt" style="font-size: 20px">- m</div>
-          <div class="label">Висота (баро)</div>
+          <div class="label">Висота</div>
+        </div>
+        <div class="row">
+          <div class="value" id="heading" style="font-size: 16px; color: #7a8099">- °</div>
+          <div class="label">Heading</div>
+        </div>
+        <div class="row">
+          <div class="value" id="speed" style="font-size: 16px; color: #7a8099">- m/s</div>
+          <div class="label">Швидкість</div>
         </div>
       </div>
     </div>
@@ -174,8 +230,21 @@
       <canvas id="voltageChart" height="80"></canvas>
     </div>
 
+    <div class="map-card">
+      <div class="map-header">
+        <h3 style="margin-bottom:0">🗺️ GPS трек</h3>
+        <div class="map-coords" id="map-coords">очікування GPS...</div>
+      </div>
+      <div id="map"></div>
+      <div class="map-controls">
+        <button class="map-btn" id="btn-center">⊙ центрувати</button>
+        <button class="map-btn" id="btn-clear">✕ очистити трек</button>
+        <span class="map-stat" id="track-points">0 точок</span>
+      </div>
+    </div>
+
     <script>
-      // Ініціалізація графіку
+      // ── CHART ──────────────────────────────────────────────
       const ctx = document.getElementById("voltageChart").getContext("2d");
       const MAX_POINTS = 60;
 
@@ -183,26 +252,22 @@
         type: "line",
         data: {
           labels: [],
-          datasets: [
-            {
-              label: "Напруга (V)",
-              data: [],
-              borderColor: "#00d4aa",
-              backgroundColor: "rgba(0, 212, 170, 0.08)",
-              borderWidth: 2,
-              pointRadius: 0,
-              tension: 0.3,
-              fill: true,
-            },
-          ],
+          datasets: [{
+            label: "Напруга (V)",
+            data: [],
+            borderColor: "#00d4aa",
+            backgroundColor: "rgba(0, 212, 170, 0.08)",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: true,
+          }],
         },
         options: {
           responsive: true,
           animation: false,
           scales: {
-            x: {
-              display: false,
-            },
+            x: { display: false },
             y: {
               min: 9,
               max: 13,
@@ -210,9 +275,7 @@
               grid: { color: "#252a38" },
             },
           },
-          plugins: {
-            legend: { display: false },
-          },
+          plugins: { legend: { display: false } },
         },
       });
 
@@ -227,19 +290,117 @@
         chart.update();
       }
 
-      // Обробка телеметрії
+      // ── MAP ────────────────────────────────────────────────
+      const map = L.map("map", { zoomControl: true });
+
+      // OpenStreetMap тайли
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap",
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Маркер поточної позиції
+      const droneIcon = L.divIcon({
+        className: "",
+        html: `<div style="
+          width: 14px; height: 14px;
+          background: #00d4aa;
+          border: 2px solid #fff;
+          border-radius: 50%;
+          box-shadow: 0 0 6px #00d4aa;
+        "></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      });
+
+      let marker = null;
+      let trackLine = null;
+      let trackCoords = [];
+      let mapInitialized = false;
+      const MAX_TRACK_POINTS = 500;
+
+      function initMap(lat, lon) {
+        map.setView([lat, lon], 17);
+        mapInitialized = true;
+      }
+
+      function updateMap(lat, lon) {
+        // Перша точка — ініціалізуємо вигляд карти
+        if (!mapInitialized) {
+          initMap(lat, lon);
+        }
+
+        // Оновити маркер
+        if (!marker) {
+          marker = L.marker([lat, lon], { icon: droneIcon }).addTo(map);
+        } else {
+          marker.setLatLng([lat, lon]);
+        }
+
+        // Додати точку до треку
+        trackCoords.push([lat, lon]);
+        if (trackCoords.length > MAX_TRACK_POINTS) {
+          trackCoords.shift();
+        }
+
+        // Оновити polyline
+        if (!trackLine) {
+          trackLine = L.polyline(trackCoords, {
+            color: "#00d4aa",
+            weight: 2,
+            opacity: 0.8,
+          }).addTo(map);
+        } else {
+          trackLine.setLatLngs(trackCoords);
+        }
+
+        // Оновити лічильник і координати
+        document.getElementById("track-points").textContent =
+          trackCoords.length + " точок";
+        document.getElementById("map-coords").textContent =
+          lat.toFixed(6) + ", " + lon.toFixed(6);
+      }
+
+      // Кнопка центрування
+      document.getElementById("btn-center").addEventListener("click", () => {
+        if (marker) {
+          map.setView(marker.getLatLng(), map.getZoom());
+        }
+      });
+
+      // Кнопка очистки треку
+      document.getElementById("btn-clear").addEventListener("click", () => {
+        trackCoords = [];
+        if (trackLine) {
+          trackLine.setLatLngs([]);
+        }
+        document.getElementById("track-points").textContent = "0 точок";
+      });
+
+      // ── СТАТУС ПІДКЛЮЧЕННЯ ────────────────────────────────
+      window.fcAPI.onPortConnected(({ portPath, baudRate }) => {
+        document.getElementById("status-text").textContent =
+          `Підключено · ${portPath} · ${baudRate}`;
+      });
+
+      window.fcAPI.onPortDisconnected(() => {
+        document.getElementById("status-text").textContent = "З'єднання втрачено";
+        document.querySelector(".status-dot").style.background = "#e53e3e";
+      });
+
+      window.fcAPI.onPortError((msg) => {
+        document.getElementById("status-text").textContent = `Помилка: ${msg}`;
+        document.querySelector(".status-dot").style.background = "#e53e3e";
+      });
+
+      // ── TELEMETRY ──────────────────────────────────────────
       window.fcAPI.onTelemetry(({ type, data }) => {
         if (type === "analog") {
-          // Напруга з кольором за рівнем
           const vEl = document.getElementById("voltage");
           vEl.textContent = data.voltage.toFixed(1) + "V";
           vEl.className =
             "value" +
-            (data.voltage < 10.5
-              ? " danger"
-              : data.voltage < 11.1
-                ? " warn"
-                : "");
+            (data.voltage < 10.5 ? " danger" : data.voltage < 11.1 ? " warn" : "");
 
           document.getElementById("current").textContent =
             data.current.toFixed(2) + " A";
@@ -249,8 +410,7 @@
         }
 
         if (type === "status") {
-          document.getElementById("cycle").textContent =
-            data.cycleTime + " мкс";
+          document.getElementById("cycle").textContent = data.cycleTime + " мкс";
 
           const i2cEl = document.getElementById("i2c");
           i2cEl.textContent = data.i2cErrors;
@@ -258,10 +418,7 @@
 
           const names = ["gyro", "accel", "baro", "compass", "gps"];
           document.getElementById("sensors").innerHTML = names
-            .map(
-              (n) =>
-                `<span class="sensor ${data.sensors[n] ? "" : "off"}">${n}</span>`,
-            )
+            .map((n) => `<span class="sensor ${data.sensors[n] ? "" : "off"}">${n}</span>`)
             .join("");
         }
 
@@ -270,14 +427,17 @@
           fixEl.textContent = data.fixType;
           fixEl.className =
             "value" +
-            (data.fixType === "3D fix"
-              ? ""
-              : data.fixType === "2D fix"
-                ? " warn"
-                : " danger");
+            (data.fixType === "3D fix" ? "" : data.fixType === "2D fix" ? " warn" : " danger");
 
           document.getElementById("sats").textContent = data.numSat + " sat";
           document.getElementById("alt").textContent = data.altitude + " m";
+          document.getElementById("heading").textContent = data.heading.toFixed(1) + " °";
+          document.getElementById("speed").textContent = data.speed.toFixed(2) + " m/s";
+
+          // Оновлюємо карту тільки якщо є реальний фікс
+          if (data.fixType !== "No fix" && data.lat !== 0 && data.lon !== 0) {
+            updateMap(data.lat, data.lon);
+          }
         }
       });
     </script>

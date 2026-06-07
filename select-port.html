@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>MSP GCS — підключення</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: monospace;
+      background: #0d0f14;
+      color: #e8eaf0;
+      padding: 28px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      color: #00d4aa;
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 10px;
+      color: #7a8099;
+      letter-spacing: 1px;
+      margin-bottom: 24px;
+    }
+
+    label {
+      font-size: 10px;
+      color: #7a8099;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    select {
+      width: 100%;
+      background: #13161d;
+      border: 1px solid #252a38;
+      color: #e8eaf0;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 8px 10px;
+      margin-bottom: 16px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    select:focus { border-color: #00d4aa; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .row select { margin-bottom: 0; }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+    }
+
+    button {
+      flex: 1;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 9px;
+      cursor: pointer;
+      border: 1px solid #252a38;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    #btn-connect {
+      background: #00d4aa;
+      color: #0d0f14;
+      border-color: #00d4aa;
+      font-weight: bold;
+    }
+
+    #btn-connect:hover { background: #00b894; }
+    #btn-connect:disabled {
+      background: #1a1e28;
+      color: #7a8099;
+      border-color: #252a38;
+      cursor: not-allowed;
+    }
+
+    #btn-refresh {
+      background: transparent;
+      color: #7a8099;
+    }
+
+    #btn-refresh:hover { color: #00d4aa; border-color: #00d4aa; }
+
+    #btn-cancel {
+      background: transparent;
+      color: #7a8099;
+      flex: 0 0 auto;
+      padding: 9px 16px;
+    }
+
+    #btn-cancel:hover { color: #e53e3e; border-color: #e53e3e; }
+
+    .no-ports {
+      font-size: 11px;
+      color: #e53e3e;
+      margin-top: -8px;
+      margin-bottom: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>⬡ MSP Ground Control Station</h1>
+  <div class="subtitle">SERIAL PORT CONFIGURATION</div>
+
+  <label>Порт</label>
+  <select id="port-select">
+    <option value="">— завантаження... —</option>
+  </select>
+  <div class="no-ports" id="no-ports">FC не знайдено. Підключи FC і натисни Оновити.</div>
+
+  <div class="row">
+    <div style="flex:1">
+      <label>Baud rate</label>
+      <select id="baud-select">
+        <option value="115200" selected>115200</option>
+        <option value="57600">57600</option>
+        <option value="38400">38400</option>
+        <option value="9600">9600</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="btn-refresh">↺ Оновити</button>
+    <button id="btn-connect" disabled>Підключити →</button>
+    <button id="btn-cancel">✕</button>
+  </div>
+
+  <script>
+    const portSelect  = document.getElementById("port-select");
+    const baudSelect  = document.getElementById("baud-select");
+    const btnConnect  = document.getElementById("btn-connect");
+    const btnRefresh  = document.getElementById("btn-refresh");
+    const btnCancel   = document.getElementById("btn-cancel");
+    const noPorts     = document.getElementById("no-ports");
+
+    async function loadPorts() {
+      portSelect.innerHTML = '<option value="">— завантаження... —</option>';
+      btnConnect.disabled = true;
+      noPorts.style.display = "none";
+
+      const ports = await window.fcAPI.getPorts();
+
+      if (ports.length === 0) {
+        portSelect.innerHTML = '<option value="">— портів не знайдено —</option>';
+        noPorts.style.display = "block";
+        return;
+      }
+
+      portSelect.innerHTML = ports.map(p => {
+        const label = p.friendlyName
+          ? `${p.path} — ${p.friendlyName}`
+          : p.path;
+        return `<option value="${p.path}">${label}</option>`;
+      }).join("");
+
+      btnConnect.disabled = false;
+    }
+
+    btnRefresh.addEventListener("click", loadPorts);
+
+    btnConnect.addEventListener("click", () => {
+      const portPath = portSelect.value;
+      const baudRate = parseInt(baudSelect.value);
+      if (!portPath) return;
+      window.fcAPI.connectPort({ portPath, baudRate });
+    });
+
+    btnCancel.addEventListener("click", () => {
+      window.fcAPI.cancelSelect();
+    });
+
+    // Завантажити порти при старті
+    loadPorts();
+  </script>
+</body>
+</html>

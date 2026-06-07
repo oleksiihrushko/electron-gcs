@@ -5,13 +5,31 @@ const { buildRequest, parseResponse, COMMANDS } = require("./src/msp");
 const { parseStatus, parseAnalog, parseRawGPS } = require("./src/parsers");
 
 let mainWindow;
+let selectWindow;
 let port;
 let buffer = Buffer.alloc(0);
+let pollInterval;
 
-function createWindow() {
+// ── ВІКНО ВИБОРУ ПОРТУ ──────────────────────────────────
+function createSelectWindow() {
+  selectWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    resizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+    },
+  });
+  selectWindow.loadFile("select-port.html");
+  selectWindow.setMenuBarVisibility(false);
+}
+
+// ── ГОЛОВНЕ ВІКНО GCS ───────────────────────────────────
+function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -20,11 +38,17 @@ function createWindow() {
   mainWindow.loadFile("index.html");
 }
 
-function connectFC() {
-  port = new SerialPort({ path: "COM3", baudRate: 115200 });
+// ── ПІДКЛЮЧЕННЯ ДО FC ───────────────────────────────────
+function connectFC(portPath, baudRate) {
+  buffer = Buffer.alloc(0);
+  port = new SerialPort({ path: portPath, baudRate });
 
   port.on("open", () => {
-    console.log("FC підключено");
+    console.log(`FC підключено: ${portPath} @ ${baudRate}`);
+
+    // Повідомити renderer про успішне підключення
+    mainWindow?.webContents.send("port-connected", { portPath, baudRate });
+
     const poll = () => {
       if (port.isOpen) {
         port.write(buildRequest(COMMANDS.STATUS));
@@ -33,7 +57,7 @@ function connectFC() {
       }
     };
     poll();
-    setInterval(poll, 1000);
+    pollInterval = setInterval(poll, 1000);
   });
 
   port.on("data", (chunk) => {
@@ -63,12 +87,44 @@ function connectFC() {
     }
   });
 
-  port.on("error", (err) => console.error("Помилка:", err.message));
+  port.on("error", (err) => {
+    console.error("Помилка порту:", err.message);
+    mainWindow?.webContents.send("port-error", err.message);
+  });
+
+  port.on("close", () => {
+    clearInterval(pollInterval);
+    mainWindow?.webContents.send("port-disconnected");
+  });
 }
 
+// ── IPC HANDLERS ────────────────────────────────────────
+
+// Renderer запитує список доступних портів
+ipcMain.handle("get-ports", async () => {
+  const ports = await SerialPort.list();
+  return ports;
+});
+
+// Renderer обрав порт — підключаємось і відкриваємо GCS
+ipcMain.on("connect-port", (_, { portPath, baudRate }) => {
+  selectWindow?.close();
+  selectWindow = null;
+  createMainWindow();
+  // Невелика затримка щоб вікно встигло завантажитись
+  mainWindow.webContents.once("did-finish-load", () => {
+    connectFC(portPath, baudRate);
+  });
+});
+
+// Renderer закрив вікно вибору без підключення
+ipcMain.on("cancel-select", () => {
+  app.quit();
+});
+
+// ── СТАРТ ───────────────────────────────────────────────
 app.whenReady().then(() => {
-  createWindow();
-  connectFC();
+  createSelectWindow();
 });
 
 app.on("window-all-closed", () => app.quit());
